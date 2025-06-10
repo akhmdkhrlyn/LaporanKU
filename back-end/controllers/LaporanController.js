@@ -3,6 +3,7 @@ import { Sequelize, Op } from "sequelize";
 import Users from "../models/UserModel.js";
 import Karyawans from "../models/KaryawanModel.js";
 
+// GET all Laporans for the logged-in user with filtering
 export const getLaporans = async (req, res) => {
   try {
     const { start_date, end_date, type, karyawan, grouped } = req.query;
@@ -18,24 +19,16 @@ export const getLaporans = async (req, res) => {
           new Date(end_date + " 23:59:59"),
         ],
       };
-    } else if (start_date) {
-      where.createdAt = {
-        [Op.gte]: new Date(start_date + " 00:00:00"),
-      };
-    } else if (end_date) {
-      where.createdAt = {
-        [Op.lte]: new Date(end_date + " 23:59:59"),
-      };
     }
 
     const include = [
       {
         model: Users,
-        attributes: [],
+        attributes: ["username", "email"],
       },
       {
         model: Karyawans,
-        attributes: [],
+        attributes: ["name", "type"],
         where: {},
       },
     ];
@@ -50,72 +43,10 @@ export const getLaporans = async (req, res) => {
       include[1].where.type = type;
     }
 
-    if (grouped) {
-      const response = await Laporans.findAll({
-        where,
-        attributes: [
-          "amount",
-          "is_scheduled",
-          [
-            Sequelize.fn(
-              "DATE_FORMAT",
-              Sequelize.col("laporans.createdAt"),
-              "%Y-%m-%d %H:%i:%s"
-            ),
-            "createdAt",
-          ],
-          [Sequelize.literal("karyawan.type"), "karyawan_type"],
-        ],
-        include,
-        raw: true,
-      });
-
-      // Grouping logic jika diperlukan, bisa disesuaikan
-      res.status(200).json(response);
-    } else {
-      const response = await Laporans.findAll({
-        where,
-        attributes: [
-          "uuid",
-          "amount",
-          "is_scheduled",
-          [
-            Sequelize.fn(
-              "DATE_FORMAT",
-              Sequelize.col("laporans.createdAt"),
-              "%Y-%m-%d %H:%i:%s"
-            ),
-            "createdAt",
-          ],
-          [Sequelize.literal("user.username"), "user"],
-          [Sequelize.literal("karyawan.name"), "karyawan"],
-          [Sequelize.literal("karyawan.type"), "karyawan_type"],
-        ],
-        include,
-        raw: true,
-      });
-      res.status(200).json(response);
-    }
-  } catch (error) {
-    res.status(400).json({ msg: error.message });
-  }
-};
-
-export const getLaporanById = async (req, res) => {
-  try {
-    const response = await Laporans.findOne({
-      where: {
-        userId: req.userId,
-        uuid: req.params.id,
-      },
-      attributes: [
-        "uuid",
-        "amount",
-        "is_scheduled",
-        [Sequelize.literal("user.username"), "user"],
-        [Sequelize.literal("karyawan.name"), "karyawan"],
-        [Sequelize.literal("karyawan.type"), "type"],
-      ],
+    const response = await Laporans.findAll({
+      where,
+      include,
+      order: [["createdAt", "DESC"]],
     });
     res.status(200).json(response);
   } catch (error) {
@@ -123,32 +54,57 @@ export const getLaporanById = async (req, res) => {
   }
 };
 
-export const createLaporan = async (req, res) => {
-  const { amount, type, is_scheduled, karyawan_name } = req.body;
+// GET a single Laporan by UUID
+export const getLaporanById = async (req, res) => {
   try {
-    // Cari karyawan berdasarkan nama
-    const karyawan = await Karyawans.findOne({
+    const response = await Laporans.findOne({
       where: {
         userId: req.userId,
-        name: karyawan_name,
+        uuid: req.params.id,
+      },
+      include: [
+        { model: Karyawans, attributes: ["name", "type"] },
+        { model: Users, attributes: ["username"] }
+      ],
+    });
+    if (!response) return res.status(404).json({ msg: "Laporan tidak ditemukan" });
+    res.status(200).json(response);
+  } catch (error) {
+    res.status(400).json({ msg: error.message });
+  }
+};
+
+// CREATE a new Laporan
+export const createLaporan = async (req, res) => {
+  // FIXED: Changed to use karyawanId for reliability
+  const { amount, type, is_scheduled, karyawanId, status } = req.body;
+  
+  if(!karyawanId) {
+    return res.status(400).json({ msg: "Karyawan (kategori) harus dipilih." });
+  }
+
+  try {
+    const karyawan = await Karyawans.findOne({
+      where: {
+        id: karyawanId,
+        userId: req.userId,
       },
     });
 
     if (!karyawan) {
-      return res.status(404).json({
-        msg: "Karyawan tidak ditemukan",
-      });
+      return res.status(404).json({ msg: "Karyawan (kategori) tidak ditemukan" });
     }
 
     if (type !== karyawan.type) {
       return res.status(400).json({
-        msg: `Type laporan tidak sesuai dengan karyawan. Karyawan ${karyawan.name} hanya untuk ${karyawan.type}`,
+        msg: `Tipe laporan (${type}) tidak sesuai. Kategori ${karyawan.name} hanya untuk tipe ${karyawan.type}`,
       });
     }
 
     await Laporans.create({
       amount: amount,
       type: type,
+      status: status || 'Baru',
       is_scheduled: is_scheduled,
       userId: req.userId,
       karyawanId: karyawan.id,
@@ -159,8 +115,10 @@ export const createLaporan = async (req, res) => {
   }
 };
 
+// UPDATE a Laporan
 export const updateLaporan = async (req, res) => {
-  const { amount, is_scheduled, type, karyawan_name } = req.body;
+  // FIXED: Simplified to primarily update status or other fields
+  const { amount, is_scheduled, type, karyawanId, status } = req.body;
 
   const laporan = await Laporans.findOne({
     where: {
@@ -173,47 +131,27 @@ export const updateLaporan = async (req, res) => {
   }
 
   try {
-    let karyawanId;
-    if (karyawan_name) {
-      const karyawan = await Karyawans.findOne({
-        where: {
-          userId: req.userId,
-          name: karyawan_name,
-        },
-      });
-      if (!karyawan) {
-        return res.status(404).json({ msg: "Karyawan tidak ditemukan" });
-      }
-      karyawanId = karyawan.id;
-
-      if (type !== karyawan.type) {
-        return res.status(400).json({
-          msg: `Type laporan tidak sesuai dengan karyawan. Karyawan ${karyawan.name} hanya untuk ${karyawan.type}`,
-        });
-      }
-    }
-
-    await Laporans.update(
-      {
-        amount: amount,
-        is_scheduled: is_scheduled,
-        type: type,
-        karyawanId: karyawanId,
+    let updateData = {};
+    if(amount) updateData.amount = amount;
+    if(is_scheduled) updateData.is_scheduled = is_scheduled;
+    if(type) updateData.type = type;
+    if(karyawanId) updateData.karyawanId = karyawanId;
+    if(status) updateData.status = status;
+    
+    await Laporans.update(updateData, {
+      where: {
+        uuid: req.params.id,
+        userId: req.userId,
       },
-      {
-        where: {
-          userId: req.userId,
-          uuid: req.params.id,
-        },
-      }
-    );
+    });
 
-    res.status(200).json({ msg: "Data berhasil diupdate" });
+    res.status(200).json({ msg: "Laporan berhasil diupdate" });
   } catch (error) {
     res.status(400).json({ msg: error.message });
   }
 };
 
+// DELETE a Laporan
 export const deleteLaporan = async (req, res) => {
   const laporan = await Laporans.findOne({
     where: {
@@ -226,68 +164,12 @@ export const deleteLaporan = async (req, res) => {
   try {
     await Laporans.destroy({
       where: {
-        userId: req.userId,
         uuid: req.params.id,
+        userId: req.userId,
       },
     });
     res.status(200).json({ msg: "Laporan berhasil dihapus" });
   } catch (error) {
     res.status(400).json({ msg: error.message });
-  }
-};
-
-export const getIncomeData = async (req) => {
-  try {
-    const incomeData = await Laporans.findAll({
-      where: {
-        userId: req.userId,
-        karyawan_type: "income",
-      },
-      attributes: [
-        "uuid",
-        "amount",
-        "createdAt",
-        [Sequelize.literal("karyawan.type"), "karyawan_type"],
-      ],
-      include: [
-        {
-          model: Karyawans,
-          attributes: [],
-        },
-      ],
-      raw: true,
-    });
-    return incomeData;
-  } catch (error) {
-    console.error("Error fetching income data:", error);
-    throw new Error("Failed to fetch income data");
-  }
-};
-
-export const getExpenseData = async (req) => {
-  try {
-    const expenseData = await Laporans.findAll({
-      where: {
-        userId: req.userId,
-        karyawan_type: "expense",
-      },
-      attributes: [
-        "uuid",
-        "amount",
-        "createdAt",
-        [Sequelize.literal("karyawan.name"), "karyawan"],
-      ],
-      include: [
-        {
-          model: Karyawans,
-          attributes: [],
-        },
-      ],
-      raw: true,
-    });
-    return expenseData;
-  } catch (error) {
-    console.error("Error fetching expense data:", error);
-    throw new Error("Failed to fetch expense data");
   }
 };

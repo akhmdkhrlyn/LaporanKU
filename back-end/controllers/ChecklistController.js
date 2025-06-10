@@ -1,87 +1,108 @@
-import Karyawans from "../models/KaryawanModel.js";
+import Checklists from "../models/ChecklistModel.js";
 import Users from "../models/UserModel.js";
 
-// Ambil semua karyawan milik user yang sedang login
-export const getKaryawans = async (req, res) => {
-  try {
-    const karyawans = await Karyawans.findAll({
-      where: { userId: req.userId },
-      include: [{ model: Users, attributes: ["uuid", "username", "email"] }],
-      attributes: ["uuid", "name", "type"],
-      order: [["name", "ASC"]],
-    });
-    res.status(200).json(karyawans);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+// GET all checklists for the logged-in user
+export const getChecklists = async (req, res) => {
+    try {
+        const { category } = req.query;
+        const where = { userId: req.userId };
+        if (category) {
+            where.category = category;
+        }
 
-// Ambil detail karyawan by uuid
-export const getKaryawanById = async (req, res) => {
-  try {
-    const karyawan = await Karyawans.findOne({
-      where: { uuid: req.params.id, userId: req.userId },
-      include: [{ model: Users, attributes: ["uuid", "username", "email"] }],
-      attributes: ["uuid", "name", "type"],
-    });
-    if (!karyawan) {
-      return res.status(404).json({ error: "Karyawan tidak ditemukan" });
+        const checklists = await Checklists.findAll({
+            where,
+            include: [{ model: Users, attributes: ["uuid", "username", "email"] }],
+            order: [["tanggal", "DESC"], ["waktu", "DESC"]],
+        });
+        res.status(200).json(checklists);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-    res.status(200).json(karyawan);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
 };
 
-// Tambah karyawan baru untuk user login
-export const createKaryawan = async (req, res) => {
-  const { name, type } = req.body;
-  try {
-    await Karyawans.create({
-      name,
-      type,
-      userId: req.userId,
-    });
-    res.status(201).json({ msg: "Karyawan berhasil ditambahkan" });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
-// Update karyawan milik user login
-export const updateKaryawan = async (req, res) => {
-  const { name, type } = req.body;
-  try {
-    const karyawan = await Karyawans.findOne({
-      where: { uuid: req.params.id, userId: req.userId },
-    });
-    if (!karyawan) {
-      return res.status(404).json({ error: "Karyawan tidak ditemukan" });
+// GET a single checklist by UUID
+export const getChecklistById = async (req, res) => {
+    try {
+        const checklist = await Checklists.findOne({
+            where: {
+                uuid: req.params.id,
+                userId: req.userId,
+            },
+        });
+        if (!checklist) {
+            return res.status(404).json({ error: "Checklist tidak ditemukan" });
+        }
+        res.status(200).json(checklist);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-    await Karyawans.update(
-      { name, type },
-      { where: { uuid: req.params.id, userId: req.userId } }
-    );
-    res.status(200).json({ msg: "Karyawan berhasil diupdate" });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
 };
 
-// Hapus karyawan milik user login
-export const deleteKaryawan = async (req, res) => {
-  try {
-    const karyawan = await Karyawans.findOne({
-      where: { uuid: req.params.id, userId: req.userId },
-    });
-    if (!karyawan) {
-      return res.status(404).json({ error: "Karyawan tidak ditemukan" });
+// CREATE a new checklist
+export const createChecklist = async (req, res) => {
+    const { item, shift, waktu, tanggal, category, status, keterangan } = req.body;
+    try {
+        await Checklists.create({
+            item,
+            shift,
+            waktu,
+            tanggal,
+            category,
+            status,
+            keterangan,
+            userId: req.userId,
+        });
+        res.status(201).json({ msg: "Checklist berhasil ditambahkan" });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
     }
-    await Karyawans.destroy({
-      where: { uuid: req.params.id, userId: req.userId },
-    });
-    res.status(200).json({ msg: "Karyawan berhasil dihapus" });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+};
+
+// UPDATE a checklist
+export const updateChecklist = async (req, res) => {
+    try {
+        const checklist = await Checklists.findOne({
+            where: {
+                uuid: req.params.id,
+                userId: req.userId,
+            },
+        });
+        if (!checklist) {
+            return res.status(404).json({ error: "Checklist tidak ditemukan" });
+        }
+        
+        const { item, shift, waktu, tanggal, category, status, keterangan } = req.body;
+        await Checklists.update(
+            { item, shift, waktu, tanggal, category, status, keterangan },
+            { where: { uuid: req.params.id, userId: req.userId } }
+        );
+        res.status(200).json({ msg: "Checklist berhasil diupdate" });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+// DELETE a checklist
+export const deleteChecklist = async (req, res) => {
+    try {
+        const checklist = await Checklists.findOne({
+            where: {
+                uuid: req.params.id,
+                userId: req.userId,
+            },
+        });
+        if (!checklist) {
+            return res.status(404).json({ error: "Checklist tidak ditemukan" });
+        }
+        await Checklists.destroy({
+            where: {
+                uuid: req.params.id,
+                userId: req.userId,
+            },
+        });
+        res.status(200).json({ msg: "Checklist berhasil dihapus" });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
 };

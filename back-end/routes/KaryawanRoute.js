@@ -1,19 +1,19 @@
 import express from "express";
 import {
-  getLaporans,
-  getLaporanById,
-  createLaporan,
-  updateLaporan,
-  deleteLaporan,
-} from "../controllers/LaporanController.js";
+  getKaryawans,
+  getKaryawanById,
+  createKaryawan,
+  updateKaryawan,
+  deleteKaryawan,
+} from "../controllers/KaryawanController.js";
 import { verifyUser } from "../middleware/AuthUser.js";
 
 const router = express.Router();
 
-router.get("/", verifyUser, getLaporans);
-router.get("/:id", verifyUser, getLaporanById);
-router.post("/", verifyUser, createLaporan);
-router.patch("/:id", verifyUser, updateLaporan);
-router.delete("/:id", verifyUser, deleteLaporan);
+router.get('/karyawans', verifyUser, getKaryawans);
+router.get('/karyawans/:id', verifyUser, getKaryawanById);
+router.post('/karyawans', verifyUser, createKaryawan);
+router.patch('/karyawans/:id', verifyUser, updateKaryawan);
+router.delete('/karyawans/:id', verifyUser, deleteKaryawan);
 
 export default router;
